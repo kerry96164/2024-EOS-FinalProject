@@ -1,5 +1,5 @@
 # include <stdio.h>
-# include <unistd.h> // for sleep() fork() exec() read() close() lseek() dup() ...
+# include <unistd.h> // for fork() exec() read() close() lseek() dup() ...
 # include <stdlib.h>
 # include <netinet/in.h>  // sockaddr_in, htons, INADDR_ANY
 # include <arpa/inet.h>   // htons, inet_ntoa
@@ -10,27 +10,41 @@
 # include <sys/shm.h>
 # include <sys/sem.h>
 
-# define NAME_SIZE 10
-# define BUFFERSIZE 1024
-# define GAMETIME 300
 
-void countdown_timer(int seconds) {
-    while (seconds > 0) {
-        system("clear");
+#define SHM_SIZE 1024
+#define NAME_SIZE 10
+#define CAPACITY 10
+#define SEM_KEY 1122334455
+#define SHM_KEY 11223344
 
-        printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
 
-        sleep(1); 
-        seconds--; 
+typedef struct Node {
+    char name[NAME_SIZE];
+    int score;
+    char time[20];
+    int offset;
+} NODE;
+
+typedef struct list {
+    int head;
+    int size;
+    NODE nodes[CAPACITY];
+} LIST;
+LIST* list;
+
+// Print the ranking board
+void print_list(LIST* list) {
+    int current = list->head;
+    printf("==========Ranking Board==========\n");
+    while (current != -1) {
+        printf("%-13s %-10d %-13s\n", list->nodes[current].name, list->nodes[current].score, list->nodes[current].time);
+        current = list->nodes[current].offset;
     }
-
-    system("clear");
-    printf("GAME OVER！\n");
 }
+
 
 int main(int argc, char* argv[]){
     char send_buf[50] = {0};
-    char recv_buf[BUFFERSIZE] = {0};
 
     if (argc != 3){
         printf("Usage: ./ranking_client <ip> <port>\n");
@@ -55,6 +69,18 @@ int main(int argc, char* argv[]){
         printf("Connection error\n");
     }
 
+    int shmid = shmget(SHM_KEY, SHM_SIZE, 0666); // Use the same key and size as the server
+    if (shmid == -1) {
+        perror("shmget failed");
+        exit(1);
+    }
+
+    LIST* list = (LIST*)shmat(shmid, NULL, 0);
+    if (list == (void*)-1) {
+        perror("shmat failed");
+        exit(1);
+    }
+
     while(1){
         printf("==== MENU ====\n");
         printf("1. User Login and Start game\n");
@@ -67,19 +93,17 @@ int main(int argc, char* argv[]){
         if (choice == 1) {
             printf("Please enter your name:");
             scanf("%10s", user_name);
-            sprintf(send_buf, "%s %s %s", "first", user_name, "10");
+            sprintf(send_buf, "%s %s", user_name, "10");
             send(server_fd, send_buf, 50, 0);
-            countdown_timer(GAMETIME);
             memset(send_buf, 0, sizeof(send_buf));
 
         } else if (choice == 2) {
-            send(server_fd, "second", 7, 0);
-            sleep(1);
-            if (recv(server_fd, recv_buf, BUFFERSIZE, 0) > 0){
-                printf("%s", recv_buf);
-            }
+            print_list(list);
         } else if(choice == 3){
             close(server_fd);
+            if (shmdt(list) == -1) {
+                perror("shmdt failed");
+            }
             break;
 
         }

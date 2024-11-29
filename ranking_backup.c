@@ -78,6 +78,7 @@ void handle_sigint(int signum) {
         perror("shmctl failed");
         exit(EXIT_FAILURE);
     }
+    /*close socket*/
 
     exit(0); 
 }
@@ -171,40 +172,28 @@ void child_func(int client_fd){
     char temp[NAME_SIZE];
     int score;
 
+    while(1){
     memset(recv_buf, 0 , BUFFERSIZE);
     if (recv(client_fd, recv_buf, BUFFERSIZE, 0) > 0) {
         sscanf(recv_buf, "%s %d", temp, &score);
+        add(list, temp, score);
+        print_list(list);
     }
-    add(list, temp, score);
-    
 
+    }
     exit(0);
 }
 
 void parent_func(){
     
-    while(1){
-        printf("==== MENU ====\n");
-        printf("1. User Login\n");
-        printf("2. Ranking Board\n");
-        printf("Enter Your Choice: ");
-        int choice;
-        char user_name[NAME_SIZE];
-        scanf("%d", &choice);
-        if (choice == 1) {
-            printf("Please enter yoour name:");
-            scanf("%10s", user_name);
-        } else if (choice == 2) {
-            print_list(list);
-        } else {
-            printf("Invalid Choice\n");
-        }
-    }
-    
+    /*---execlp to call detect_ball.py----*/
+    /*---use select to handle new conneciton if there's more connection---*/
 }
 
 int main(int argc, char* argv[]) {        
     signal(SIGINT, handle_sigint);
+    /*--- chid process handler ---*/
+    
     int s; // for shmaphore id
 
 
@@ -233,6 +222,7 @@ int main(int argc, char* argv[]) {
         perror("shmget");
         exit(1);
     }
+
     list = (LIST *)shmat(shmid, NULL, 0);
     if (list == (void *)-1) {
         perror("shmat");
@@ -296,7 +286,7 @@ int main(int argc, char* argv[]) {
             exit(0);
         }else{
             
-            parent_func();
+            //parent_func();
             //add(list, "Alice", 300);
             //add(list, "Bob", 500);
             //add(list, "Charlie", 400);
