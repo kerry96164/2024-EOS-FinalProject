@@ -3,12 +3,15 @@ To-do list
 1. semaphore to implement CS (V)
 2. socket to add node(V)
 3. time (V)
-4. timeout(V)
-5. socket to transmit ranking board(V)
+4. timer 
+5. socket to transmit ranking board (V)
 6. add system("clear")
-7. make sure no zombie process
-8. make sure close add socket fds
-9. check if signal works properly(delete sem and shm) 
+7. make sure no zombie process (v)
+8. sigaction make sure close add socket fds (shmctl failed: Invalid argument) (v)
+9. check if signal works properly(delete sem and shm) (v)
+10. server準備畫面如game strat game over等
+11. client 用system clear把畫面弄乾淨一點
+12. father run detect_ball.py with select()
 */
 
 # include <time.h>
@@ -24,6 +27,8 @@ To-do list
 # include <sys/socket.h> // for socket
 # include <netinet/in.h>  // sockaddr_in, htons, INADDR_ANY
 # include <arpa/inet.h>   // htons, inet_ntoa
+# include <sys/wait.h> // waitpid()
+# include <sys/time.h> 
 
 
 # define SHM_SIZE 1024
@@ -33,10 +38,13 @@ To-do list
 # define BUFFERSIZE 1024
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
-# define GAMETIME 300
+# define SHM_KEY2 1122334 // for timer value
+# define GAMETIME 10
 
 int shmid;
+int shmid2;
 int server_fd;
+int* is_running;
 
 
 typedef struct Node{
@@ -59,22 +67,23 @@ void get_current_time(char *buffer, size_t size) {
     strftime(buffer, size, "%Y-%m-%d %H:%M", t);
 }
 
+
 void countdown_timer(int seconds) {
     while (seconds > 0) {
         system("clear");
 
         printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
-
         sleep(1); 
         seconds--; 
     }
 
     system("clear");
-    printf("GAME OVER！\n");
+    printf("GAME OVER！Login to start a new game...\n");
+    (*is_running) = 0;
 }
 
 
-void handle_sigint(int signum) { 
+void SIGINT_handler(int signum) { 
 
     // remove semaphore
     int s = semget(SEM_KEY, 1, 0);
@@ -88,20 +97,32 @@ void handle_sigint(int signum) {
         exit(1);
     }
     
-
-    if ((shmid = shmget(SHM_KEY, SHM_SIZE, 0666)) < 0) {
-        perror("shmget");
-        exit(1);
-    }
-
     // remove shared memory
     if (shmctl(shmid, IPC_RMID, NULL) < 0) {
         perror("shmctl failed");
         exit(EXIT_FAILURE);
     }
+
+    // detach shared memory2
+    if (shmdt(is_running) == -1) {
+        perror("shmdt2");
+        exit(1);
+    }
+    
+    // remove shared memory
+    if (shmctl(shmid2, IPC_RMID, NULL) < 0) {
+        perror("shmctl failed");
+        exit(EXIT_FAILURE);
+    }
     /*close socket*/
 
+    close(server_fd);
     exit(0); 
+}
+
+/* Use for killing Zombie process */
+void zombie_handler(int signum) {
+    while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
 /* P () - returns 0 if OK; -1 if there was a problem */
@@ -229,11 +250,31 @@ void child_func(int client_fd){
             sscanf(recv_buf, "%s %s %d", choice_from_client, name, &score);
             if (strncmp(choice_from_client, "first", 5) == 0){
                 printf("1\n");
-                countdown_timer(GAMETIME);
+                if (*is_running == 0){
+                    (*is_running)=1;
+                    countdown_timer(GAMETIME);
+                }
+
                 add(list, name, score);
             }else if(strncmp(choice_from_client, "second", 7)== 0){
+
                 printf("2\n");
                 print_list(list, client_fd);
+            }else if(strncmp(choice_from_client, "exit", 4)== 0){
+
+                printf("3\n");
+                // detach shared memory
+                if (shmdt(list) == -1) {
+                    perror("shmdt");
+                    exit(1);
+                }
+                // detach shared memory2
+                if (shmdt(is_running) == -1) {
+                    perror("shmdt2");
+                    exit(1);
+                }
+    
+
             }
         }
     }
@@ -242,14 +283,19 @@ void child_func(int client_fd){
 
 void parent_func(){
     
-    /*---execlp to call detect_ball.py----*/
+    pid_t pid = fork();
+    if (pid == 0){
+        execlp("python3", "python3", "detect_ball.py", (char *)NULL);
+    }
+    
     /*---use select to handle new conneciton if there's more connection---*/
 }
 
 int main(int argc, char* argv[]) {        
-    signal(SIGINT, handle_sigint);
-    /*--- chid process handler ---*/
-    
+
+    /*--- child process handler ---*/
+    signal(SIGCHLD, zombie_handler);
+
     int s; // for shmaphore id
 
 
@@ -272,7 +318,23 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    int shmid = shmget(SHM_KEY, SHM_SIZE, 0666 | IPC_CREAT); 
+    // shm for recording timer value
+    shmid2 = shmget(SHM_KEY2, sizeof(int), 0666 | IPC_CREAT); 
+
+    if (shmid2 == -1) {
+        perror("shmget2");
+        exit(1);
+    }
+    
+    is_running = (int* )shmat(shmid2, NULL, 0);
+    if (is_running == (int *)-1) {
+        perror("shmat2");
+        exit(1);
+    }
+    *is_running = 0; // not running
+
+    // shm for ranking board
+    shmid = shmget(SHM_KEY, SHM_SIZE, 0666 | IPC_CREAT); 
 
     if (shmid == -1) {
         perror("shmget");
@@ -322,37 +384,90 @@ int main(int argc, char* argv[]) {
     }
     //printf("Server is now listening...\n");
 
+    // sigaction for SIGINT to close(serverfd) and remove sem, shm
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa)); 
+    sa.sa_handler = &SIGINT_handler; 
+    sigaction(SIGINT, &sa, NULL);
+
+    /*
+    // select() for handling new connections
+    int pfd[2];
+    pipe(pfd);
+    close(pfd[1]); // parent close write end
+    fd_set readfds;
+    int max_fd = server_fd +1;
+    */
+
+    
     printf("GAME START!!!\n");
 
+
+    
     while(1){
-        int client_fd =accept(server_fd, (struct sockaddr *)&address, &addrlen);
-        if (client_fd < 0){
-            perror("Accepting client failed");
+        
+        
+        /*
+        FD_ZERO(&readfds);
+        FD_SET(pfd[0], &readfds);
+        FD_SET(server_fd, &readfds);
+
+        int retval = select(max_fd, &readfds, NULL, NULL, NULL);
+        if (retval < 0) {
+            perror("Select failed");
             exit(EXIT_FAILURE);
         }
 
-        pid_t pid = fork();
-        if (pid < 0){
-            perror("Fork failed");
-            exit(EXIT_FAILURE);
-        }else if(pid == 0){
-            close(server_fd);
-            child_func(client_fd);
-            close(client_fd);
-            exit(0);
-        }else{
-            
-            //parent_func();
-            //add(list, "Alice", 300);
-            //add(list, "Bob", 500);
-            //add(list, "Charlie", 400);
-            
+        if (FD_ISSET(server_fd, &readfds)) {
+            int client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+            if (client_fd < 0) {
+                perror("Accepting client failed");
+                continue;
+            }
 
-            close(client_fd);
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("Fork failed");
+                close(client_fd);
+                continue;
+            } else if (pid == 0) { 
+                close(server_fd);
+                child_func(client_fd);
+                close(client_fd);
+                exit(0);
+            } else { 
+                close(client_fd);
+                parent_func();
+            }
         }
+        */
+
+
+        
+            int client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+            if (client_fd < 0) {
+                perror("Accepting client failed");
+                continue;
+            }
+
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("Fork failed");
+                close(client_fd);
+                continue;
+            } else if (pid == 0) { 
+                close(server_fd);
+                child_func(client_fd);
+                close(client_fd);
+                exit(0);
+            } else { 
+                close(client_fd);
+                parent_func();
+            }
+        
+
     }
 
-    close(server_fd);
     return 0;
 
 }

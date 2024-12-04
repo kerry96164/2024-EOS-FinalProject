@@ -9,24 +9,100 @@
 # include <sys/ipc.h>
 # include <sys/shm.h>
 # include <sys/sem.h>
+# include <termios.h> // change input mode
+# include <sys/ioctl.h>
+
+
+# define RED     "\033[31m"
+# define GREEN   "\033[32m"
+# define YELLOW  "\033[33m"
+# define BLUE    "\033[34m"
+# define MAGENTA "\033[35m"
+# define CYAN    "\033[36m"
+# define RESET   "\033[0m"
 
 # define NAME_SIZE 10
 # define BUFFERSIZE 1024
-# define GAMETIME 300
 
-void countdown_timer(int seconds) {
-    while (seconds > 0) {
-        system("clear");
+static struct termios stored_settings;
 
-        printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
-
-        sleep(1); 
-        seconds--; 
+void print_centered(const char *text) {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w); 
+    int width = w.ws_col; 
+    int len = strlen(text);
+    int padding = (width - len) / 2;
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
     }
-
-    system("clear");
-    printf("GAME OVER！\n");
+    printf("%s\n", text);
 }
+
+void print_frame( char *text) {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w); 
+    int width = w.ws_col;
+    int text_len = strlen(text);
+    int padding = (width - text_len - 4) / 2; 
+
+    for (int i = 0; i < width; i++) {
+        printf("*");
+    }
+    printf("\n");
+
+    printf("**");
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
+    }
+    printf("%s", text);
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
+    }
+    if ((text_len + 4) % 2 != 0) {
+        printf(" ");
+    }
+    printf("**\n");
+
+    for (int i = 0; i < width; i++) {
+        printf("*");
+    }
+    printf("\n");
+}
+
+
+
+void print_large_text(const char *text, const char *color) {
+    printf("%s", color);
+    printf("  ██████   █████  ███    ███ ███████       ██████  ████████  █████   ██████  ████████ \n");
+    printf(" ██       ██   ██ ████  ████ ██           ██          ██    ██   ██  ██   ██    ██    \n");
+    printf(" ██   ███ ███████ ██ ████ ██ █████         ██████     ██    ███████  ██████     ██    \n");
+    printf(" ██    ██ ██   ██ ██  ██  ██ ██                 ██    ██    ██   ██  ██   ██    ██    \n");
+    printf("  ██████  ██   ██ ██      ██ ███████       ██████     ██    ██   ██  ██   ██    ██    \n");
+    printf(RESET); 
+}
+
+void set_keypress (void){
+    struct termios new_settings;
+
+    tcgetattr (0, &stored_settings);
+
+    new_settings = stored_settings;
+
+    /* Disable canonical mode, and set buffer size to 1 byte */
+    new_settings.c_lflag &= (~ICANON);
+    new_settings.c_cc[VTIME] = 0;
+    new_settings.c_cc[VMIN] = 1;
+
+    tcsetattr (0, TCSANOW, &new_settings);
+    return;
+}
+
+void reset_keypress (void){
+    tcsetattr (0, TCSANOW, &stored_settings);
+    return;
+}
+
+
 
 int main(int argc, char* argv[]){
     char send_buf[50] = {0};
@@ -56,32 +132,46 @@ int main(int argc, char* argv[]){
     }
 
     while(1){
-        printf("==== MENU ====\n");
-        printf("1. User Login and Start game\n");
-        printf("2. Ranking Board\n");
-        printf("3. exit\n");
-        printf("Enter Your Choice: ");
+        system("clear");
+        print_frame("==== GAME MENU ====");
+        print_centered("1. User Login and Start Game");
+        print_centered("2. Ranking Board");
+        print_centered("3. Exit");
+        print_centered("Enter Your Choice: ");
+
+        
         int choice;
         char user_name[NAME_SIZE];
         scanf("%d", &choice);
         if (choice == 1) {
-            printf("Please enter your name:");
+            system("clear");
+            print_centered("Please enter your name:");
             scanf("%10s", user_name);
             sprintf(send_buf, "%s %s %s", "first", user_name, "10");
             send(server_fd, send_buf, 50, 0);
-            countdown_timer(GAMETIME);
             memset(send_buf, 0, sizeof(send_buf));
+            system("clear");
+            print_large_text("GAME START!!!", YELLOW);
+            sleep(3);
 
         } else if (choice == 2) {
             send(server_fd, "second", 7, 0);
-            sleep(1);
+            usleep(50000);
+            system("clear");
             if (recv(server_fd, recv_buf, BUFFERSIZE, 0) > 0){
                 printf("%s", recv_buf);
+                set_keypress();
+                printf("<!-- Press any button -->\n");
+                getchar(); // Use getchar to pause
+                getchar();
+                reset_keypress();
+                system("clear");
             }
         } else if(choice == 3){
+            send(server_fd, "exit", 4, 0);
             close(server_fd);
+            system("clear");
             break;
-
         }
     }
 

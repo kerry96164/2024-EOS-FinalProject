@@ -1,5 +1,5 @@
 # include <stdio.h>
-# include <unistd.h> // for fork() exec() read() close() lseek() dup() ...
+# include <unistd.h> // for sleep() fork() exec() read() close() lseek() dup() ...
 # include <stdlib.h>
 # include <netinet/in.h>  // sockaddr_in, htons, INADDR_ANY
 # include <arpa/inet.h>   // htons, inet_ntoa
@@ -9,42 +9,104 @@
 # include <sys/ipc.h>
 # include <sys/shm.h>
 # include <sys/sem.h>
+# include <termios.h> // change input mode
+# include <sys/ioctl.h>
 
 
-#define SHM_SIZE 1024
-#define NAME_SIZE 10
-#define CAPACITY 10
-#define SEM_KEY 1122334455
-#define SHM_KEY 11223344
+# define RED     "\033[31m"
+# define GREEN   "\033[32m"
+# define YELLOW  "\033[33m"
+# define BLUE    "\033[34m"
+# define MAGENTA "\033[35m"
+# define CYAN    "\033[36m"
+# define RESET   "\033[0m"
 
+# define NAME_SIZE 10
+# define BUFFERSIZE 1024
+# define GAMETIME 10
+static struct termios stored_settings;
 
-typedef struct Node {
-    char name[NAME_SIZE];
-    int score;
-    char time[20];
-    int offset;
-} NODE;
-
-typedef struct list {
-    int head;
-    int size;
-    NODE nodes[CAPACITY];
-} LIST;
-LIST* list;
-
-// Print the ranking board
-void print_list(LIST* list) {
-    int current = list->head;
-    printf("==========Ranking Board==========\n");
-    while (current != -1) {
-        printf("%-13s %-10d %-13s\n", list->nodes[current].name, list->nodes[current].score, list->nodes[current].time);
-        current = list->nodes[current].offset;
+void print_centered(const char *text) {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w); 
+    int width = w.ws_col; 
+    int len = strlen(text);
+    int padding = (width - len) / 2;
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
     }
+    printf("%s\n", text);
 }
+
+void print_frame( char *text) {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w); 
+    int width = w.ws_col;
+    int text_len = strlen(text);
+    int padding = (width - text_len - 4) / 2; 
+
+    for (int i = 0; i < width; i++) {
+        printf("*");
+    }
+    printf("\n");
+
+    printf("**");
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
+    }
+    printf("%s", text);
+    for (int i = 0; i < padding; i++) {
+        printf(" ");
+    }
+    if ((text_len + 4) % 2 != 0) {
+        printf(" ");
+    }
+    printf("**\n");
+
+    for (int i = 0; i < width; i++) {
+        printf("*");
+    }
+    printf("\n");
+}
+
+
+
+void print_large_text(const char *text, const char *color) {
+    printf("%s", color);
+    printf("  ██████   █████  ███    ███ ███████       ██████  ████████  █████   ██████  ████████ \n");
+    printf(" ██       ██   ██ ████  ████ ██           ██          ██    ██   ██  ██   ██    ██    \n");
+    printf(" ██   ███ ███████ ██ ████ ██ █████         ██████     ██    ███████  ██████     ██    \n");
+    printf(" ██    ██ ██   ██ ██  ██  ██ ██                 ██    ██    ██   ██  ██   ██    ██    \n");
+    printf("  ██████  ██   ██ ██      ██ ███████       ██████     ██    ██   ██  ██   ██    ██    \n");
+    printf(RESET); 
+}
+
+void set_keypress (void){
+    struct termios new_settings;
+
+    tcgetattr (0, &stored_settings);
+
+    new_settings = stored_settings;
+
+    /* Disable canonical mode, and set buffer size to 1 byte */
+    new_settings.c_lflag &= (~ICANON);
+    new_settings.c_cc[VTIME] = 0;
+    new_settings.c_cc[VMIN] = 1;
+
+    tcsetattr (0, TCSANOW, &new_settings);
+    return;
+}
+
+void reset_keypress (void){
+    tcsetattr (0, TCSANOW, &stored_settings);
+    return;
+}
+
 
 
 int main(int argc, char* argv[]){
     char send_buf[50] = {0};
+    char recv_buf[BUFFERSIZE] = {0};
 
     if (argc != 3){
         printf("Usage: ./ranking_client <ip> <port>\n");
@@ -69,41 +131,45 @@ int main(int argc, char* argv[]){
         printf("Connection error\n");
     }
 
-    int shmid = shmget(SHM_KEY, SHM_SIZE, 0666); // Use the same key and size as the server
-    if (shmid == -1) {
-        perror("shmget failed");
-        exit(1);
-    }
-
-    LIST* list = (LIST*)shmat(shmid, NULL, 0);
-    if (list == (void*)-1) {
-        perror("shmat failed");
-        exit(1);
-    }
-
     while(1){
-        printf("==== MENU ====\n");
-        printf("1. User Login and Start game\n");
-        printf("2. Ranking Board\n");
-        printf("3. exit\n");
-        printf("Enter Your Choice: ");
+        system("clear");
+        print_frame("==== GAME MENU ====");
+        print_centered("1. User Login and Start Game");
+        print_centered("2. Ranking Board");
+        print_centered("3. Exit");
+        print_centered("Enter Your Choice: ");
+
+        
         int choice;
         char user_name[NAME_SIZE];
         scanf("%d", &choice);
         if (choice == 1) {
-            printf("Please enter your name:");
+            system("clear");
+            print_centered("Please enter your name:");
             scanf("%10s", user_name);
-            sprintf(send_buf, "%s %s", user_name, "10");
+            sprintf(send_buf, "%s %s %s", "first", user_name, "10");
             send(server_fd, send_buf, 50, 0);
             memset(send_buf, 0, sizeof(send_buf));
+            system("clear");
+            print_large_text("GAME START!!!", YELLOW);
+            sleep(GAMETIME);
 
         } else if (choice == 2) {
-            print_list(list);
+            send(server_fd, "second", 7, 0);
+            usleep(50000);
+            system("clear");
+            if (recv(server_fd, recv_buf, BUFFERSIZE, 0) > 0){
+                printf("%s", recv_buf);
+                set_keypress();
+                printf("<!-- Press any button -->\n");
+                getchar(); // Use getchar to pause
+                getchar();
+                reset_keypress();
+                system("clear");
+            }
         } else if(choice == 3){
             close(server_fd);
-            if (shmdt(list) == -1) {
-                perror("shmdt failed");
-            }
+            system("clear");
             break;
 
         }

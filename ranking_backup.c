@@ -1,8 +1,17 @@
 /*
 To-do list
 1. semaphore to implement CS (V)
-2. socket to add node
+2. socket to add node(V)
 3. time (V)
+4. timer 
+5. socket to transmit ranking board (V)
+6. add system("clear")
+7. make sure no zombie process (v)
+8. sigaction make sure close add socket fds (shmctl failed: Invalid argument) (v)
+9. check if signal works properly(delete sem and shm) (v)
+10. server準備畫面如game strat game over等
+11. client 用system clear把畫面弄乾淨一點
+12. father run detect_ball.py with select()
 */
 
 # include <time.h>
@@ -18,18 +27,24 @@ To-do list
 # include <sys/socket.h> // for socket
 # include <netinet/in.h>  // sockaddr_in, htons, INADDR_ANY
 # include <arpa/inet.h>   // htons, inet_ntoa
+# include <sys/wait.h> // waitpid()
+# include <sys/time.h> 
 
 
 # define SHM_SIZE 1024
 # define NAME_SIZE 10
 # define CAPACITY 10
 # define SEM_MODE 666
-# define BUFFERSIZE 128
+# define BUFFERSIZE 1024
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
+# define SHM_KEY2 1122334 // for timer value
+# define GAMETIME 10
 
 int shmid;
+int shmid2;
 int server_fd;
+int* is_running;
 
 
 typedef struct Node{
@@ -53,7 +68,22 @@ void get_current_time(char *buffer, size_t size) {
 }
 
 
-void handle_sigint(int signum) { 
+void countdown_timer(int seconds) {
+    while (seconds > 0) {
+        system("clear");
+
+        printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
+        sleep(1); 
+        seconds--; 
+    }
+
+    system("clear");
+    printf("GAME OVER！Login to start a new game...\n");
+    (*is_running) = 0;
+}
+
+
+void SIGINT_handler(int signum) { 
 
     // remove semaphore
     int s = semget(SEM_KEY, 1, 0);
@@ -67,20 +97,32 @@ void handle_sigint(int signum) {
         exit(1);
     }
     
-
-    if ((shmid = shmget(SHM_KEY, SHM_SIZE, 0666)) < 0) {
-        perror("shmget");
-        exit(1);
-    }
-
     // remove shared memory
     if (shmctl(shmid, IPC_RMID, NULL) < 0) {
         perror("shmctl failed");
         exit(EXIT_FAILURE);
     }
+
+    // detach shared memory2
+    if (shmdt(is_running) == -1) {
+        perror("shmdt2");
+        exit(1);
+    }
+    
+    // remove shared memory
+    if (shmctl(shmid2, IPC_RMID, NULL) < 0) {
+        perror("shmctl failed");
+        exit(EXIT_FAILURE);
+    }
     /*close socket*/
 
+    close(server_fd);
     exit(0); 
+}
+
+/* Use for killing Zombie process */
+void zombie_handler(int signum) {
+    while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
 /* P () - returns 0 if OK; -1 if there was a problem */
@@ -158,28 +200,67 @@ void add(LIST *list, char* name, int score){
 }
 
 
-void print_list(LIST* list){
-    int current = list-> head;
-    printf("==========Ranking Board==========\n");
-    while (current != -1){
-        printf("%-13s %-10d %-13s\n", list->nodes[current].name, list->nodes[current].score, list->nodes[current].time);
+void print_list(LIST* list, int client_fd) {
+    int current = list->head;
+    char send_buf[BUFFERSIZE];
+    int index = 0;
+
+    // add title
+    snprintf(send_buf + index, BUFFERSIZE - index, "==========Ranking Board==========\n");
+    index = strlen(send_buf);
+
+    // sprintf into send_buf
+    while (current != -1) {
+        int n = snprintf(send_buf + index, BUFFERSIZE - index, 
+                         "%-13s %-10d %-13s\n", 
+                         list->nodes[current].name, 
+                         list->nodes[current].score, 
+                         list->nodes[current].time);
+
+        if (n < 0) {
+            perror("Error formatting ranking data");
+            return;
+        }
+
+        index += n;
+        if (index >= BUFFERSIZE - 1) {
+            // if buffer is full
+            break;
+        }
+
         current = list->nodes[current].offset;
+    }
+
+    if (send(client_fd, send_buf, index, 0) == -1) {
+        perror("Failed to send ranking board");
     }
 }
 
 void child_func(int client_fd){
     char recv_buf[BUFFERSIZE] = {0};
-    char temp[NAME_SIZE];
+    char name[NAME_SIZE];
+    char choice_from_client[10] = {0};
+    char send_buf[BUFFERSIZE] = {0};
     int score;
 
     while(1){
-    memset(recv_buf, 0 , BUFFERSIZE);
-    if (recv(client_fd, recv_buf, BUFFERSIZE, 0) > 0) {
-        sscanf(recv_buf, "%s %d", temp, &score);
-        add(list, temp, score);
-        print_list(list);
-    }
+        memset(recv_buf, 0 , BUFFERSIZE);
+        if (recv(client_fd, recv_buf, BUFFERSIZE, 0) > 0) {
+        
+            sscanf(recv_buf, "%s %s %d", choice_from_client, name, &score);
+            if (strncmp(choice_from_client, "first", 5) == 0){
+                printf("1\n");
+                if (*is_running == 0){
+                    (*is_running)=1;
+                    countdown_timer(GAMETIME);
+                }
 
+                add(list, name, score);
+            }else if(strncmp(choice_from_client, "second", 7)== 0){
+                printf("2\n");
+                print_list(list, client_fd);
+            }
+        }
     }
     exit(0);
 }
@@ -191,9 +272,10 @@ void parent_func(){
 }
 
 int main(int argc, char* argv[]) {        
-    signal(SIGINT, handle_sigint);
-    /*--- chid process handler ---*/
-    
+
+    /*--- child process handler ---*/
+    signal(SIGCHLD, zombie_handler);
+
     int s; // for shmaphore id
 
 
@@ -202,21 +284,37 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     
-    /* Create a binary semaphore */
+    // Create a binary semaphore 
     s = semget(SEM_KEY, 1, IPC_CREAT | IPC_EXCL | SEM_MODE);
     if (s < 0){
         perror("Semaphore create failed");
         exit(EXIT_FAILURE);
     }
 
-    /* Set semaphore initial value = 1 */
+    // Set semaphore initial value = 1 
     int val = 1;
     if (semctl(s, 0, SETVAL, val) < 0){
         perror("Semaphore set value to 1 failed");
         exit(EXIT_FAILURE);
     }
 
-    int shmid = shmget(SHM_KEY, SHM_SIZE, 0666 | IPC_CREAT); 
+    // shm for recording timer value
+    shmid2 = shmget(SHM_KEY2, sizeof(int), 0666 | IPC_CREAT); 
+
+    if (shmid2 == -1) {
+        perror("shmget2");
+        exit(1);
+    }
+    
+    is_running = (int* )shmat(shmid2, NULL, 0);
+    if (is_running == (int *)-1) {
+        perror("shmat2");
+        exit(1);
+    }
+    *is_running = 0; // not running
+
+    // shm for ranking board
+    shmid = shmget(SHM_KEY, SHM_SIZE, 0666 | IPC_CREAT); 
 
     if (shmid == -1) {
         perror("shmget");
@@ -233,7 +331,7 @@ int main(int argc, char* argv[]) {
     list->head = -1;
     list->size = 0;
 
-     /* setting sockaddr_in  */
+    // setting sockaddr_in 
     struct sockaddr_in address;
     socklen_t addrlen = sizeof(address);
     int port = atoi(argv[1]);
@@ -242,7 +340,7 @@ int main(int argc, char* argv[]) {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    /* force using socket address already in use */
+    // force using socket address already in use 
     int yes = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
@@ -266,6 +364,13 @@ int main(int argc, char* argv[]) {
     }
     //printf("Server is now listening...\n");
 
+    // sigaction for SIGINT to close(serverfd) and remove sem, shm
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa)); 
+    sa.sa_handler = &SIGINT_handler; 
+    sigaction(SIGINT, &sa, NULL);
+
+
     printf("GAME START!!!\n");
 
     while(1){
@@ -284,19 +389,11 @@ int main(int argc, char* argv[]) {
             child_func(client_fd);
             close(client_fd);
             exit(0);
-        }else{
-            
-            //parent_func();
-            //add(list, "Alice", 300);
-            //add(list, "Bob", 500);
-            //add(list, "Charlie", 400);
-            
-
+        }else{       
             close(client_fd);
         }
     }
 
-    close(server_fd);
     return 0;
 
 }
