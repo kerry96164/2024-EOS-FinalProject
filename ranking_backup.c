@@ -1,5 +1,6 @@
 /*
 To-do list
+
 1. semaphore to implement CS (V)
 2. socket to add node(V)
 3. time (V)
@@ -9,11 +10,12 @@ To-do list
 7. make sure no zombie process (v)
 8. sigaction make sure close add socket fds (shmctl failed: Invalid argument) (v)
 9. check if signal works properly(delete sem and shm) (v)
-10. server準備畫面如game strat game over等
-11. client 用system clear把畫面弄乾淨一點
+10. server準備畫面如game strat game over等 (其實不用)
+11. client 用system clear把畫面弄乾淨一點(v)
 12. father run detect_ball.py with select()
 */
 
+# include <wiringPi.h>
 # include <time.h>
 # include <stdio.h>
 # include <stdlib.h>
@@ -38,13 +40,121 @@ To-do list
 # define BUFFERSIZE 1024
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
-# define SHM_KEY2 1122334 // for timer value
+# define SHM_KEY2 1122334 // for is_running value
 # define GAMETIME 10
 
 int shmid;
 int shmid2;
 int server_fd;
 int* is_running;
+int game_score;
+int P(int s);
+int V(int s);
+
+/*-------------------------------------------*/
+# define CLK 27  // CLK 對應 GPIO27
+# define DIO 17  // DIO 對應 GPIO17
+
+// 定義 TM1637 的指令碼
+# define TM1637_CMD1 0x40
+# define TM1637_CMD2 0xC0
+# define TM1637_CMD3 0x88
+
+// 7 段顯示字形表 (0-9 和空白) 帶小數點
+uint8_t digitToSegment[] = {
+    0x3F, // 0
+    0x06, // 1
+    0x5B, // 2
+    0x4F, // 3
+    0x66, // 4
+    0x6D, // 5
+    0x7D, // 6
+    0x07, // 7
+    0x7F, // 8
+    0x6F, // 9
+    0x00  // 空白
+};
+
+// 顯示帶有小數點的數字，將小數點位置設置為 1 或 2（即顯示兩個點）
+uint8_t digitToSegmentWithDot(uint8_t digit, int isDot) {
+    if (isDot) {
+        return digitToSegment[digit] | 0x80;  // 將小數點的控制位（0x80）加入數字
+    } else {
+        return digitToSegment[digit];
+    }
+}
+
+// 設定 CLK 和 DIO 的狀態
+void TM1637_start() {
+    pinMode(DIO, OUTPUT);
+    digitalWrite(DIO, LOW);
+    delayMicroseconds(10);
+    digitalWrite(CLK, LOW);
+}
+
+void TM1637_stop() {
+    pinMode(DIO, OUTPUT);
+    digitalWrite(CLK, LOW);
+    delayMicroseconds(10);
+    digitalWrite(DIO, LOW);
+    delayMicroseconds(10);
+    digitalWrite(CLK, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(DIO, HIGH);
+}
+
+void TM1637_writeByte(uint8_t data) {
+    for (int i = 0; i < 8; i++) {
+        digitalWrite(CLK, LOW);
+        if (data & 0x01) {
+            digitalWrite(DIO, HIGH);
+        } else {
+            digitalWrite(DIO, LOW);
+        }
+        data >>= 1;
+        delayMicroseconds(10);
+        digitalWrite(CLK, HIGH);
+        delayMicroseconds(10);
+    }
+    pinMode(DIO, INPUT);
+    digitalWrite(CLK, LOW);
+    delayMicroseconds(10);
+    digitalWrite(CLK, HIGH);
+    delayMicroseconds(10);
+    pinMode(DIO, OUTPUT);
+}
+
+void TM1637_setBrightness(uint8_t brightness) {
+    TM1637_start();
+    TM1637_writeByte(TM1637_CMD3 | (brightness & 0x07));
+    TM1637_stop();
+}
+
+void TM1637_displayDigits(uint8_t digits[4]) {
+    TM1637_start();
+    TM1637_writeByte(TM1637_CMD2);
+    for (int i = 0; i < 4; i++) {
+        TM1637_writeByte(digits[i]);
+    }
+    TM1637_stop();
+}
+
+void TM1637_displayTime(int seconds) {
+    uint8_t digits[4];
+    int minutes = seconds / 60;
+    int secs = seconds % 60;
+    
+    // 將數字拆分為數位並加上小數點
+    digits[0] = digitToSegmentWithDot(minutes / 10, 0);  // 顯示分鐘十位
+    digits[1] = digitToSegmentWithDot(minutes % 10, 1);  // 顯示分鐘個位並加小數點
+    digits[2] = digitToSegmentWithDot(secs / 10, 0);     // 顯示秒鐘十位
+    digits[3] = digitToSegmentWithDot(secs % 10, 1);     // 顯示秒鐘個位並加小數點
+
+    TM1637_displayDigits(digits);
+}
+/*-------------------------------------------*/
+
+
 
 
 typedef struct Node{
@@ -69,16 +179,30 @@ void get_current_time(char *buffer, size_t size) {
 
 
 void countdown_timer(int seconds) {
+
+    int s = semget(SEM_KEY, 1, 0);
+    if (s < 0) {
+        printf("cannot find semaphore\n");
+    }
     while (seconds > 0) {
         system("clear");
 
         printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
+        TM1637_displayTime(seconds);
         sleep(1); 
         seconds--; 
     }
 
+    // 倒數結束，顯示 0000
+    uint8_t zeroDisplay[] = {0, 0, 0, 0};
+    TM1637_displayDigits(zeroDisplay);
+
     system("clear");
     printf("GAME OVER！Login to start a new game...\n");
+
+    V(s);
+    V(s);
+    usleep(5000);
     (*is_running) = 0;
 }
 
@@ -161,9 +285,7 @@ int V(int s) {
 
 void add(LIST *list, char* name, int score){
 
-    int s = semget(SEM_KEY, 1, 0);
 
-    P(s);
     if (list->size >= CAPACITY){
         printf("Ranking board is full\n");
         return;
@@ -195,7 +317,6 @@ void add(LIST *list, char* name, int score){
             list->nodes[new_index].offset = current;
         }
     }
-    V(s);
 
 }
 
@@ -242,23 +363,49 @@ void child_func(int client_fd){
     char choice_from_client[10] = {0};
     char send_buf[BUFFERSIZE] = {0};
     int score;
+    int s = semget(SEM_KEY, 1, 0);
+    if (s < 0) {
+        printf("cannot find semaphore\n");
+    }
 
     while(1){
         memset(recv_buf, 0 , BUFFERSIZE);
         if (recv(client_fd, recv_buf, BUFFERSIZE, 0) > 0) {
         
-            sscanf(recv_buf, "%s %s %d", choice_from_client, name, &score);
+            sscanf(recv_buf, "%s %s", choice_from_client, name);
             if (strncmp(choice_from_client, "first", 5) == 0){
                 printf("1\n");
                 if (*is_running == 0){
                     (*is_running)=1;
                     countdown_timer(GAMETIME);
                 }
-
-                add(list, name, score);
+                P(s);
+                FILE *file = fopen("game_score.txt", "r");
+                if (file == NULL) {
+                    perror("fopen");
+                }
+                fscanf(file, "%d", &game_score);
+                fclose(file);
+                add(list, name, game_score);
             }else if(strncmp(choice_from_client, "second", 7)== 0){
+
                 printf("2\n");
                 print_list(list, client_fd);
+            }else if(strncmp(choice_from_client, "exit", 4)== 0){
+
+                printf("3\n");
+                // detach shared memory
+                if (shmdt(list) == -1) {
+                    perror("shmdt");
+                    exit(1);
+                }
+                // detach shared memory2
+                if (shmdt(is_running) == -1) {
+                    perror("shmdt2");
+                    exit(1);
+                }
+    
+
             }
         }
     }
@@ -267,8 +414,11 @@ void child_func(int client_fd){
 
 void parent_func(){
     
-    /*---execlp to call detect_ball.py----*/
-    /*---use select to handle new conneciton if there's more connection---*/
+    pid_t pid = fork();
+    if (pid == 0){
+       execlp("python3", "python3", "game_score.py", (char *)NULL);
+    }
+    
 }
 
 int main(int argc, char* argv[]) {        
@@ -291,8 +441,8 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // Set semaphore initial value = 1 
-    int val = 1;
+    // Set semaphore initial value = 0 for sync when countdown to 0 and each task read score from txt
+    int val = 0;
     if (semctl(s, 0, SETVAL, val) < 0){
         perror("Semaphore set value to 1 failed");
         exit(EXIT_FAILURE);
@@ -370,28 +520,44 @@ int main(int argc, char* argv[]) {
     sa.sa_handler = &SIGINT_handler; 
     sigaction(SIGINT, &sa, NULL);
 
+    // initializing wiringPi
+    if (wiringPiSetupGpio() == -1) {
+        printf("Setup wiringPi failed!");
+        return -1;
+    }
 
+    pinMode(CLK, OUTPUT);
+    pinMode(DIO, OUTPUT);
+
+    // setup brightness (0x00 to 0x07)
+    TM1637_setBrightness(0x07);
     printf("GAME START!!!\n");
+    parent_func();
 
+    
     while(1){
-        int client_fd =accept(server_fd, (struct sockaddr *)&address, &addrlen);
-        if (client_fd < 0){
+        
+        int client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+        if (client_fd < 0) {
             perror("Accepting client failed");
-            exit(EXIT_FAILURE);
+            continue;
         }
 
         pid_t pid = fork();
-        if (pid < 0){
+        if (pid < 0) {
             perror("Fork failed");
-            exit(EXIT_FAILURE);
-        }else if(pid == 0){
+            close(client_fd);
+            continue;
+        } else if (pid == 0) { 
             close(server_fd);
             child_func(client_fd);
             close(client_fd);
             exit(0);
-        }else{       
+        } else { 
             close(client_fd);
         }
+        
+
     }
 
     return 0;

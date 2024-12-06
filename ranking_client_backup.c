@@ -23,7 +23,7 @@
 
 # define NAME_SIZE 10
 # define BUFFERSIZE 1024
-# define GAMETIME 10
+
 static struct termios stored_settings;
 
 void print_centered(const char *text) {
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]){
             memset(send_buf, 0, sizeof(send_buf));
             system("clear");
             print_large_text("GAME START!!!", YELLOW);
-            sleep(GAMETIME);
+            sleep(3);
 
         } else if (choice == 2) {
             send(server_fd, "second", 7, 0);
@@ -168,10 +168,10 @@ int main(int argc, char* argv[]){
                 system("clear");
             }
         } else if(choice == 3){
+            send(server_fd, "exit", 4, 0);
             close(server_fd);
             system("clear");
             break;
-
         }
     }
 

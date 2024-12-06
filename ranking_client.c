@@ -147,7 +147,7 @@ int main(int argc, char* argv[]){
             system("clear");
             print_centered("Please enter your name:");
             scanf("%10s", user_name);
-            sprintf(send_buf, "%s %s %s", "first", user_name, "10");
+            sprintf(send_buf, "%s %s", "first", user_name);
             send(server_fd, send_buf, 50, 0);
             memset(send_buf, 0, sizeof(send_buf));
             system("clear");
