@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+	<head>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body>
+		<div class="container">
+			<div class="row">
+				<div class="grid-cols-8">
+					<h3 class="text-4xl text-center m-11">Live Streaming</h3>
+					<img src="{{ url_for('video_stream') }}" width="20%">
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上下左右按鈕操作</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 100px 100px 100px;
+            grid-template-rows: 100px 100px 100px;
+            justify-content: center;
+            gap: 10px;
+        }
+        .controls button {
+            font-size: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background-color: #dcdcdc;
+        }
+        #output {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>上下左右按鈕操作</h1>
+    <div class="controls">
+        <div></div> <!-- 用於排列空白 -->
+        <button onclick="updateDirection('w')">↑</button>
+        <div></div> <!-- 用於排列空白 -->
+        <button onclick="updateDirection('a')">←</button>
+        <div></div>
+        <button onclick="updateDirection('d')">→</button>
+        <div></div>
+        <button onclick="updateDirection('s')">↓</button>
+        <div></div>
+    </div>
+    <div id="output">目前方向：無</div>
+
+    <script>
+        var num = 0;
+        const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay))
+        function updateDirection(direction) {
+            num=num+1;
+            const output = document.getElementById('output');
+            output.textContent = `目前方向：${direction}${num}`;
+            // fetch('http://localhost:50143', {
+            //     method: 'POST',
+            //     body: JSON.stringify({ direction: direction }),
+            //     headers: { 'Content-Type': 'application/json' }
+            // })
+            // .then(response => response.text())
+            // .then(data => {
+            //     document.getElementById('output').textContent = `伺服器回應：${data}`;
+            // })
+            // .catch(error => {
+            //     console.error('錯誤:', error);
+            //     document.getElementById('output').textContent = '伺服器無回應';
+            // });
+            delay(1000);
+        }
+        // 處理鍵盤事件，將鍵盤按鍵映射到相應的方向
+        document.addEventListener('keydown', function(event) {
+            switch(event.key) {
+                case 'W':   // 上方向鍵
+                case 'w':   // 上方向鍵
+                case 'ArrowUp': // 上方向鍵
+                    updateDirection('w');
+                    break;
+                case 'S':   // 下方向鍵
+                case 's': // 下方向鍵
+                case 'ArrowDown': // 下方向鍵
+                    updateDirection('s');
+                    break;
+                case 'A':   // 左方向鍵
+                case 'a': // 左方向鍵
+                case 'ArrowLeft': // 左方向鍵
+                    updateDirection('a');
+                    break;
+                case 'D':   // 右方向鍵
+                case 'd': // 右方向鍵
+                case 'ArrowRight': // 右方向鍵
+                    updateDirection('d');
+                    break;
+                default:
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>
