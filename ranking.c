@@ -41,7 +41,7 @@ To-do list
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
 # define SHM_KEY2 1122334 // for is_running value
-# define GAMETIME 10
+# define GAMETIME 80
 
 int shmid;
 int shmid2;
@@ -59,6 +59,7 @@ int V(int s);
 # define TM1637_CMD1 0x40
 # define TM1637_CMD2 0xC0
 # define TM1637_CMD3 0x88
+void parent_func();
 
 // 7 段顯示字形表 (0-9 和空白) 帶小數點
 uint8_t digitToSegment[] = {
@@ -189,6 +190,7 @@ void countdown_timer(int seconds) {
 
         printf("GAME TIME LEFT：%02d:%02d\n", seconds / 60, seconds % 60);
         TM1637_displayTime(seconds);
+        parent_func();
         sleep(1); 
         seconds--; 
     }
@@ -416,7 +418,7 @@ void parent_func(){
     
     pid_t pid = fork();
     if (pid == 0){
-       execlp("python3", "python3", "game_score.py", (char *)NULL);
+       execlp("python3", "python3", "stream.py", (char *)NULL);
     }
     
 }
@@ -532,7 +534,7 @@ int main(int argc, char* argv[]) {
     // setup brightness (0x00 to 0x07)
     TM1637_setBrightness(0x07);
     printf("GAME START!!!\n");
-    parent_func();
+    //parent_func();
 
     
     while(1){
