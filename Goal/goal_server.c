@@ -35,13 +35,13 @@ To-do list
 
 # define SHM_SIZE 1024
 # define NAME_SIZE 10
-# define CAPACITY 5
+# define CAPACITY 10
 # define SEM_MODE 666
 # define BUFFERSIZE 1024
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
 # define SHM_KEY2 1122334 // for is_running value
-# define GAMETIME 1
+# define GAMETIME 100
 
 int shmid = -1;;
 int shmid2 = -1;;
