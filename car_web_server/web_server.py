@@ -48,7 +48,7 @@ def gen_frames():
 
 @app.route("/", methods=['GET'])
 def get_stream_html():
-    return render_template('webcam.html')
+    return render_template('web.html')
 
 
 @app.route('/api/stream')
