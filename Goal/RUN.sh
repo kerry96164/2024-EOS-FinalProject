@@ -1,6 +1,7 @@
 #! /bin/bash
 
 # Will auto run this bash when boot
+
 cd /home/pi/Goal
 echo "$(date) - Starting goal_server..." >> /home/pi/Goal/log.txt
 ./goal_server 8888 >> /home/pi/Goal/log.txt 2>&1

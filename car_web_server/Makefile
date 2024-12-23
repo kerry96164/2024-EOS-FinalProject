@@ -5,10 +5,10 @@ all: build
 
 build:
 ifeq ($(ARCH),aarch64)
-	gcc goal_server.c -o goal_server
+	gcc car_server.c -o car_server
 else
-	$(CROSS_COMPILE)gcc goal_server.c -o goal_server -lwiringPi
+	$(CROSS_COMPILE)gcc car_server.c -o car_server
 endif
 
 clean:
-	rm -f goal_server
+	rm -f car_server

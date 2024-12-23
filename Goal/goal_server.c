@@ -41,7 +41,9 @@ To-do list
 # define SEM_KEY 1122334455
 # define SHM_KEY 11223344
 # define SHM_KEY2 1122334 // for is_running value
+
 # define GAMETIME 300
+
 
 int shmid = -1;;
 int shmid2 = -1;;
