@@ -11,7 +11,7 @@
 #include <linux/gpio.h>     //GPIO 
 
   
-//LED is connected to this GPIO 
+
 #define COUNT 4
 #define GPIO_23 (23)
 #define GPIO_24 (24) 
