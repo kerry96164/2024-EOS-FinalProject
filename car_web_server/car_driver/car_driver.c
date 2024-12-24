@@ -1,4 +1,3 @@
-
 #include <linux/kernel.h> 
 #include <linux/init.h> 
 #include <linux/module.h> 
@@ -8,31 +7,48 @@
 #include <linux/device.h> 
 #include <linux/delay.h> 
 #include <linux/uaccess.h>  //copy_to/from_user() 
-#include <linux/gpio.h>     //GPIO 
-
-  
-//LED is connected to this GPIO 
+#include <linux/gpio.h>     //GPIO
+#include <linux/pwm.h>      //PWM
+ 
 #define COUNT 4
-#define GPIO_23 (23)
-#define GPIO_24 (24) 
-#define GPIO_17 (17) 
-#define GPIO_27 (27) 
+#define RIGHT_BACKWARD_PIN  (23) // 右 後退
+#define RIGHT_FORWARD_PIN  (24) // 右 前進
+#define LEFT_BACKWARD_PIN  (17) // 左 後退
+#define LEFT_FORWARD_PIN  (27) // 左 前進
+#define PWM_LEFT_CHANNEL 0    // 樹莓派的 PWM 0 GPIO18 PIN12
+#define PWM_RIGHT_CHANNEL 1   // 樹莓派的 PWM 1 GPIO19 PIN35
 
   
 dev_t dev = 0; 
-static int gpios[COUNT] = {GPIO_23, GPIO_24, GPIO_17, GPIO_27}; // Pin 16 18 11 13
+static int gpios[COUNT] = {RIGHT_BACKWARD_PIN , RIGHT_FORWARD_PIN, LEFT_BACKWARD_PIN , LEFT_FORWARD_PIN }; // Pin 16 18 11 13
 static struct class *dev_class; 
-static struct cdev etx_cdev; 
+static struct cdev etx_cdev;
+static struct pwm_device *pwm_left = NULL;   // PWM 設備（左）
+static struct pwm_device *pwm_right = NULL;  // PWM 設備（右）
   
 static int __init etx_driver_init(void); 
-static void __exit etx_driver_exit(void); 
-void set_gpios(int a,int b, int c, int d){
-    gpio_set_value(GPIO_23, a);
-    gpio_set_value(GPIO_24, b);
-    gpio_set_value(GPIO_17, c);
-    gpio_set_value(GPIO_27, d);
+static void __exit etx_driver_exit(void);
+
+void set_gpios(int rb,int rf, int lb, int lf){
+    gpio_set_value(RIGHT_BACKWARD_PIN, rb);
+    gpio_set_value(RIGHT_FORWARD_PIN, rf);
+    gpio_set_value(LEFT_BACKWARD_PIN, lb);
+    gpio_set_value(LEFT_FORWARD_PIN, lf);
 }
-  
+
+void set_pwm_duty_cycle(struct pwm_device *pwm, int duty_cycle){
+    struct pwm_state state;
+    pwm_get_state(pwm, &state);
+
+    state.duty_cycle = state.period * duty_cycle / 100; // 設置占空比
+    // 禁用 PWM
+    if (pwm_is_enabled(pwm)) {
+        pwm_disable(pwm);
+    }
+    pwm_apply_state(pwm, &state);                      // 應用設置
+    pwm_enable(pwm);                       // 啟用 PWM
+}
+
   
 /*************** Driver functions **********************/ 
 static int     etx_open(struct inode *inode, struct file *file); 
@@ -85,9 +101,10 @@ static ssize_t etx_read(struct file *filp,
   }
 
   //write to user 
-  len = COUNT; 
-  if( copy_to_user(buf, gpio_states, len) > 0) { 
+  len = COUNT * sizeof(uint); 
+  if( copy_to_user(buf, gpio_states, len) != 0) { 
     pr_err("ERROR: Not all the bytes have been copied to user\n"); 
+    return -EFAULT; 
   } 
    
   pr_info("Read function : GPIO states = [%d, %d, %d, %d] \n", gpio_states[0],gpio_states[1], gpio_states[2], gpio_states[3]); 
@@ -101,26 +118,41 @@ static ssize_t etx_read(struct file *filp,
 static ssize_t etx_write(struct file *filp,  
                 const char __user *buf, size_t len, loff_t *off) 
 { 
-  char rec_buf[2] = {0}; 
-   
-  if( copy_from_user( rec_buf, buf, len ) > 0) { 
-    pr_err("ERROR: Not all the bytes have been copied from user\n"); 
-  } 
-   
-  pr_info("Write Function : %c\n", rec_buf[0]); 
-   
-  if (rec_buf[0]=='W' || rec_buf[0] == 'w') { 
+  char rec_buf[10] = {0};
+  char command;
+  int duty_cycle_left = 100;  // 預設左馬達速度（百分比）
+  int duty_cycle_right = 100; // 預設右馬達速度（百分比）
+  
+  if (len >= sizeof(rec_buf)) {
+    len = sizeof(rec_buf) - 1;
+  }
+  if (copy_from_user(rec_buf, buf, len) != 0) {
+    pr_err("ERROR: Not all the bytes have been copied from user\n");
+    return -EFAULT;
+  }
+  rec_buf[len] = '\0';
+  
+  // 解析指令格式，例如 "w 80 60"
+  sscanf(rec_buf, "%c %d %d", &command, &duty_cycle_left, &duty_cycle_right);
+
+  pr_info("Write Function : %c %d %d\n", command, duty_cycle_left, duty_cycle_right);
+  
+  if (command == 'W' || command == 'w') { 
     set_gpios(0, 1, 0, 1); 
-  } else if (rec_buf[0]=='S' || rec_buf[0] == 's') { 
+  } else if (command == 'S' || command == 's') { 
     set_gpios(1, 0, 1, 0); 
-  } else if (rec_buf[0]=='A' || rec_buf[0] == 'a') { 
+  } else if (command == 'A' || command == 'a') { 
     set_gpios(0, 1, 0, 0); 
-  }else if (rec_buf[0]=='D' || rec_buf[0] == 'd') { 
+  } else if (command == 'D' || command == 'd') { 
     set_gpios(0, 0, 0, 1); 
-  }else if (rec_buf[0]=='X' || rec_buf[0] == 'x') { 
+  } else if (command == 'X' || command == 'x') { 
     set_gpios(0, 0, 0, 0); 
   }
-   
+
+  // 設置左右馬達速度
+  set_pwm_duty_cycle(pwm_left, duty_cycle_left);
+  set_pwm_duty_cycle(pwm_right, duty_cycle_right);
+  
   return len; 
 } 
  
@@ -170,8 +202,7 @@ static int __init etx_driver_init(void)
         pr_err("GPIO %d is not valid\n", gpios[i]);
         goto r_device;
     }
- }
-
+  }
    
   //Requesting the GPIO 
   /* Label */
@@ -180,8 +211,7 @@ static int __init etx_driver_init(void)
  for (int i = 0; i < COUNT; i++) {
     sprintf(label, "GPIO_%d", gpios[i]);  // generate labels
     if (gpio_request(gpios[i], label) < 0) {
-        pr_err("ERROR: GPIO %d request failed\n", gpios[i]);
-        goto r_gpio;
+        goto r_device;
     }
     gpio_direction_output(gpios[i], 0);   //configure the GPIO as output 
  }
@@ -197,6 +227,15 @@ static int __init etx_driver_init(void)
   */ 
   for (int i = 0; i < COUNT; i++){
     gpio_export(gpios[i], false);
+  }
+
+    // 初始化 PWM
+  pwm_left = pwm_request(PWM_LEFT_CHANNEL, "pwm_left");
+  pwm_right = pwm_request(PWM_RIGHT_CHANNEL, "pwm_right");
+
+  if (!pwm_left || !pwm_right) {
+      printk(KERN_ERR "PWM 初始化失敗\n");
+      goto r_gpio;
   }
    
   pr_info("Device Driver Insert...Done!!!\n"); 
@@ -227,7 +266,8 @@ static void __exit etx_driver_exit(void)
     gpio_unexport(gpios[i]); 
     gpio_free(gpios[i]); 
   }
-  
+  pwm_free(pwm_left);
+  pwm_free(pwm_right);
   device_destroy(dev_class,dev); 
   class_destroy(dev_class); 
   cdev_del(&etx_cdev); 
@@ -240,5 +280,5 @@ module_exit(etx_driver_exit);
   
 MODULE_LICENSE("GPL"); 
 MODULE_AUTHOR("ChengHanWang <yhes3103@gmail.com>"); 
-MODULE_DESCRIPTION("A simple device driver - GPIO Driver"); 
-MODULE_VERSION("1.32"); 
+MODULE_DESCRIPTION("PWM Motor Driver"); 
+MODULE_VERSION("2.0"); 
