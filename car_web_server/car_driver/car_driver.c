@@ -39,6 +39,9 @@ void set_gpios(int rb,int rf, int lb, int lf){
 void set_pwm_duty_cycle(struct pwm_device *pwm, int duty_cycle){
     struct pwm_state state;
     pwm_get_state(pwm, &state);
+    if (state.period == 0) {
+        state.period = 20000000; // 默認 20ms 週期
+    }
 
     state.duty_cycle = state.period * duty_cycle / 100; // 設置占空比
     // 禁用 PWM
@@ -62,11 +65,11 @@ static ssize_t etx_write(struct file *filp,
 //File operation structure  
 static struct file_operations fops = 
 { 
-  .owner          = THIS_MODULE, 
-  .read           = etx_read, 
-  .write          = etx_write, 
-  .open           = etx_open, 
-  .release        = etx_release, 
+    .owner          = THIS_MODULE, 
+    .read           = etx_read, 
+    .write          = etx_write, 
+    .open           = etx_open, 
+    .release        = etx_release, 
 }; 
  
 /* 
@@ -74,8 +77,8 @@ static struct file_operations fops =
 */  
 static int etx_open(struct inode *inode, struct file *file) 
 { 
-  pr_info("Device File Opened...!!!\n"); 
-  return 0; 
+    pr_info("Device File Opened...!!!\n"); 
+    return 0; 
 } 
  
 /* 
@@ -83,8 +86,8 @@ static int etx_open(struct inode *inode, struct file *file)
 */ 
 static int etx_release(struct inode *inode, struct file *file) 
 { 
-  pr_info("Device File Closed...!!!\n"); 
-  return 0; 
+    pr_info("Device File Closed...!!!\n"); 
+    return 0; 
 } 
  
 /* 
@@ -93,23 +96,23 @@ static int etx_release(struct inode *inode, struct file *file)
 static ssize_t etx_read(struct file *filp,  
                 char __user *buf, size_t len, loff_t *off) 
 { 
-  uint gpio_states[COUNT] = {0};
-   
-  //reading GPIO value 
-  for(int i = 0; i < COUNT; i++){
-    gpio_states[i] = gpio_get_value(gpios[i]);
-  }
+    uint gpio_states[COUNT] = {0};
+    
+    //reading GPIO value 
+    for(int i = 0; i < COUNT; i++){
+      gpio_states[i] = gpio_get_value(gpios[i]);
+    }
 
-  //write to user 
-  len = COUNT * sizeof(uint); 
-  if( copy_to_user(buf, gpio_states, len) != 0) { 
-    pr_err("ERROR: Not all the bytes have been copied to user\n"); 
-    return -EFAULT; 
-  } 
-   
-  pr_info("Read function : GPIO states = [%d, %d, %d, %d] \n", gpio_states[0],gpio_states[1], gpio_states[2], gpio_states[3]); 
-   
-  return 0; 
+    //write to user 
+    len = COUNT * sizeof(uint); 
+    if( copy_to_user(buf, gpio_states, len) != 0) { 
+      pr_err("ERROR: Not all the bytes have been copied to user\n"); 
+      return -EFAULT; 
+    } 
+    
+    pr_info("Read function : GPIO states = [%d, %d, %d, %d] \n", gpio_states[0],gpio_states[1], gpio_states[2], gpio_states[3]); 
+    
+    return 0; 
 } 
  
 /* 
@@ -118,42 +121,42 @@ static ssize_t etx_read(struct file *filp,
 static ssize_t etx_write(struct file *filp,  
                 const char __user *buf, size_t len, loff_t *off) 
 { 
-  char rec_buf[10] = {0};
-  char command;
-  int duty_cycle_left = 100;  // 預設左馬達速度（百分比）
-  int duty_cycle_right = 100; // 預設右馬達速度（百分比）
-  
-  if (len >= sizeof(rec_buf)) {
-    len = sizeof(rec_buf) - 1;
-  }
-  if (copy_from_user(rec_buf, buf, len) != 0) {
-    pr_err("ERROR: Not all the bytes have been copied from user\n");
-    return -EFAULT;
-  }
-  rec_buf[len] = '\0';
-  
-  // 解析指令格式，例如 "w 80 60"
-  sscanf(rec_buf, "%c %d %d", &command, &duty_cycle_left, &duty_cycle_right);
+    char rec_buf[20] = {0};
+    char command;
+    int duty_cycle_left = 100;  // 預設左馬達速度（百分比）
+    int duty_cycle_right = 100; // 預設右馬達速度（百分比）
+    
+    if (len >= sizeof(rec_buf)) {
+        len = sizeof(rec_buf) - 1;
+    }
+    if (copy_from_user(rec_buf, buf, len) != 0) {
+        pr_err("ERROR: Not all the bytes have been copied from user\n");
+        return -EFAULT;
+    }
+    rec_buf[len] = '\0';
+    
+    // 解析指令格式，例如 "w 80 60"
+    sscanf(rec_buf, "%c %d %d", &command, &duty_cycle_left, &duty_cycle_right);
 
-  pr_info("Write Function : %c %d %d\n", command, duty_cycle_left, duty_cycle_right);
-  
-  if (command == 'W' || command == 'w') { 
-    set_gpios(0, 1, 0, 1); 
-  } else if (command == 'S' || command == 's') { 
-    set_gpios(1, 0, 1, 0); 
-  } else if (command == 'A' || command == 'a') { 
-    set_gpios(0, 1, 0, 0); 
-  } else if (command == 'D' || command == 'd') { 
-    set_gpios(0, 0, 0, 1); 
-  } else if (command == 'X' || command == 'x') { 
-    set_gpios(0, 0, 0, 0); 
-  }
+    pr_info("Write Function : %c %d %d\n", command, duty_cycle_left, duty_cycle_right);
+    
+    if (command == 'W' || command == 'w') { 
+        set_gpios(0, 1, 0, 1); 
+    } else if (command == 'S' || command == 's') { 
+        set_gpios(1, 0, 1, 0); 
+    } else if (command == 'A' || command == 'a') { 
+        set_gpios(0, 1, 0, 0); 
+    } else if (command == 'D' || command == 'd') { 
+        set_gpios(0, 0, 0, 1); 
+    } else if (command == 'X' || command == 'x') { 
+        set_gpios(0, 0, 0, 0); 
+    }
 
-  // 設置左右馬達速度
-  set_pwm_duty_cycle(pwm_left, duty_cycle_left);
-  set_pwm_duty_cycle(pwm_right, duty_cycle_right);
-  
-  return len; 
+    // 設置左右馬達速度
+    set_pwm_duty_cycle(pwm_left, duty_cycle_left);
+    set_pwm_duty_cycle(pwm_right, duty_cycle_right);
+    
+    return len; 
 } 
  
 
@@ -230,31 +233,31 @@ static int __init etx_driver_init(void)
   }
 
     // 初始化 PWM
-  pwm_left = pwm_request(PWM_LEFT_CHANNEL, "pwm_left");
-  pwm_right = pwm_request(PWM_RIGHT_CHANNEL, "pwm_right");
+    pwm_left = pwm_request(PWM_LEFT_CHANNEL, "pwm_left");
+    pwm_right = pwm_request(PWM_RIGHT_CHANNEL, "pwm_right");
 
-  if (!pwm_left || !pwm_right) {
-      printk(KERN_ERR "PWM 初始化失敗\n");
-      goto r_gpio;
-  }
-   
-  pr_info("Device Driver Insert...Done!!!\n"); 
-  return 0; 
-  
-r_gpio: 
-  for (int i = 0; i < COUNT; i++) {
-    gpio_free(gpios[i]);
-  }
-r_device: 
-  device_destroy(dev_class,dev); 
-r_class: 
-  class_destroy(dev_class); 
-r_del: 
-  cdev_del(&etx_cdev); 
-r_unreg: 
-  unregister_chrdev_region(dev,1); 
-   
-  return -1; 
+    if (pwm_left == NULL || pwm_right == NULL) {
+        printk(KERN_ERR "PWM initialization failed\n");
+        goto r_gpio;
+    }
+    
+    pr_info("Device Driver Insert...Done!!!\n"); 
+    return 0; 
+    
+  r_gpio: 
+      for (int i = 0; i < COUNT; i++) {
+        gpio_free(gpios[i]);
+      }
+  r_device: 
+      device_destroy(dev_class,dev); 
+  r_class: 
+      class_destroy(dev_class); 
+  r_del: 
+      cdev_del(&etx_cdev); 
+  r_unreg: 
+      unregister_chrdev_region(dev,1); 
+    
+    return -1; 
 } 
  
 /* 
