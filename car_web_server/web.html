@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上下左右按鈕操作</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 100px 100px 100px;
+            grid-template-rows: 100px 100px 100px;
+            justify-content: center;
+            gap: 10px;
+            display: none; /* 隱藏控制按鈕區域 */
+        }
+        .controls button {
+            font-size: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background-color: #dcdcdc;
+        }
+        #inputSection {
+            text-align: center;
+        }    
+        #inputText {
+            margin-bottom: 10px; /* 給輸入框底部添加間距 */
+            padding: 10px;
+            font-size: 16px;
+            width: 80%;
+            box-sizing: border-box; /* 確保 padding 不影響總寬度 */
+        }
+        button {
+            margin-bottom: 20px; /* 給按鈕底部添加間距 */
+        }
+        #rankingBoardSection {
+            display: flex;
+            flex-direction: column; /* 設定為垂直排列 */
+            align-items: center;  /* 水平置中 */
+            justify-content: center; /* 垂直置中 */
+            margin-top: 30px;
+        }
+        #rankingBoardButton {
+            font-size: 16px;
+            padding: 10px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+            margin-bottom: 10px; /* 按鈕與文字框間的間距 */
+        }
+        #rankingBoardButton:hover {
+            background-color: #dcdcdc;
+        }
+        #rankingBoardOutput {
+            padding: 10px;
+            font-size: 16px;
+            width: 80%;
+            height: 220px; /* 估算的高度，依據字體大小和行高來設定 */
+            line-height: 20px; /* 行高設定為20px */
+            box-sizing: border-box; /* 確保內邊距不影響總寬度 */
+            resize: none; /* 禁止用戶調整大小（可選） */
+            margin: 0 auto; /* 使文字框水平置中 */
+        }
+    </style>
+</head>
+<body>
+    <!-- 輸入區域 -->
+    <div id="inputSection">
+        <h3>請輸入玩家名稱</h3>
+        <input type="text" id="inputText" placeholder="玩家名稱[0-9,a-z,A-Z]" />
+        <button onclick="submitText()">送出</button>
+    </div>
+    <div> </div> <!-- 用於排列空白 -->
+
+    <!-- 控制區域 -->
+    <div style="text-align: center;">
+        <img src="{{ url_for('video_stream') }}" width="300px">
+    </div>
+
+    <div class="controls" id="controls">
+        <div></div> <!-- 用於排列空白 -->
+        <button onclick="updateDirection_Click('w')">↑</button>
+        <div></div> <!-- 用於排列空白 -->
+        <button onclick="updateDirection_Click('a')">←</button>
+        <button onclick="updateDirection_Click('x')">STOP</button>
+        <button onclick="updateDirection_Click('d')">→</button>
+        <div></div>
+        <button onclick="updateDirection_Click('s')">↓</button>
+        <div></div>
+    </div>
+    <!-- <div id="output">目前方向：無</div> -->
+
+    <div id="rankingBoardSection">
+        <button id="rankingBoardButton" onclick="getRanking()">排行榜</button>
+        <textarea id="rankingBoardOutput" placeholder="" readonly></textarea>
+    </div>
+
+    <script>
+        var num = 0;
+        var flag = false;
+        const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay))
+
+        function updateDirection_Click(direction){
+            flag = false;
+            updateDirection(direction); 
+        }
+
+        function updateDirection(direction) {
+            // num = num + 1;
+            // const output = document.getElementById('output');
+            // output.textContent = `目前方向：${direction}${num}`;
+            fetch('http://192.168.1.2:4534', {  // car_server
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain',
+                },
+                body: direction,  // 傳送方向
+            })
+            .then(response => response.text())  // 伺服器回應
+            .then(data => {
+                console.log('伺服器回應:', data);
+            })
+            .catch(error => {
+                console.error('錯誤:', error);
+            });
+        }
+
+        // 顯示控制按鈕區域並隱藏輸入區域
+        function submitText() {
+            const inputText = document.getElementById('inputText').value;
+            if (inputText.trim() !== "") {
+                document.getElementById('inputSection').style.display = 'none';  // 隱藏輸入區域
+                document.getElementById('controls').style.display = 'grid';  // 顯示控制按鈕區域
+                document.getElementById('rankingBoardSection').style.display = 'none';  // 隱藏排行榜按鈕
+                enableKeyControls();
+                fetch('http://192.168.1.3:8888', {  // goal_server
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: "first " + inputText,  // 傳送輸入的文字
+                })
+                .then(response => response.text())  // 伺服器回應
+                .then(data => {
+                    console.log('伺服器回應:', data);
+                    document.getElementById('inputSection').style.display = 'block';  // 顯示輸入區域
+                    document.getElementById('controls').style.display = 'none';  // 隱藏控制按鈕區域
+                    document.getElementById('rankingBoardSection').style.display = 'flex';  // 顯示排行榜按鈕
+                    updateDirection('x');
+                    getRanking();
+                    disableKeyControls();
+                })
+                .catch(error => {
+                    console.error('錯誤:', error);
+                });
+            } else {
+                alert("請輸入玩家名稱");
+            }
+        }
+
+        function getRanking() {
+            const additionalOutput = document.getElementById('rankingBoardOutput');
+            additionalOutput.value = "Loading...";
+            fetch('http://192.168.1.3:8888', {  // 新的伺服器目標
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain',
+                },
+                body: "second",  // 傳送輸入的文字
+            })
+            .then(response => response.text())  // 伺服器回應
+            .then(data => {
+                console.log('伺服器回應:', data);
+                additionalOutput.value = data;  // 顯示回應在文字欄位
+            })
+            .catch(error => {
+                console.error('錯誤:', error);
+                additionalOutput.value = "錯誤：" + error;
+            });
+        }
+
+        function enableKeyControls() {
+            // 啟用鍵盤監聽器
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+        }
+        function disableKeyControls() {
+            // 移除鍵盤監聽器
+            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keyup', handleKeyUp);
+        }
+
+        function handleKeyDown(event) {
+            switch(event.key) {
+                case 'W':
+                case 'w':
+                case 'ArrowUp':
+                    updateDirection('w');
+                    break;
+                case 'S':
+                case 's':
+                case 'ArrowDown':
+                    updateDirection('s');
+                    break;
+                case 'A':
+                case 'a':
+                case 'ArrowLeft':
+                    updateDirection('a');
+                    break;
+                case 'D':
+                case 'd':
+                case 'ArrowRight':
+                    updateDirection('d');
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        function handleKeyUp(event) {
+            switch(event.key) {
+                case 'W':
+                case 'w':
+                case 'ArrowUp':
+                case 'S':
+                case 's':
+                case 'ArrowDown':
+                case 'A':
+                case 'a':
+                case 'ArrowLeft':
+                case 'D':
+                case 'd':
+                case 'ArrowRight':
+                    flag = false;
+                    updateDirection('x');
+                    break;
+                default:
+                    break;
+            }
+        }
+
+    </script>
+</body>
+</html>
