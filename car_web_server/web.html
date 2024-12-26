@@ -42,6 +42,9 @@
         button {
             margin-bottom: 20px; /* 給按鈕底部添加間距 */
         }
+        #output {
+            margin-top: 20px; /* 給文字底部添加間距 */
+        }
         #rankingBoardSection {
             display: flex;
             flex-direction: column; /* 設定為垂直排列 */
@@ -98,7 +101,7 @@
         <button onclick="updateDirection_Click('s')">↓</button>
         <div></div>
     </div>
-    <!-- <div id="output">目前方向：無</div> -->
+    <div id="output">目前速度： Left:0  Right:0</div>
 
     <div id="rankingBoardSection">
         <button id="rankingBoardButton" onclick="getRanking()">排行榜</button>
@@ -117,8 +120,8 @@
 
         function updateDirection(direction) {
             // num = num + 1;
-            // const output = document.getElementById('output');
-            // output.textContent = `目前方向：${direction}${num}`;
+            const output = document.getElementById('output');
+            
             fetch('http://192.168.1.2:4534', {  // car_server
                 method: 'POST',
                 headers: {
@@ -129,6 +132,7 @@
             .then(response => response.text())  // 伺服器回應
             .then(data => {
                 console.log('伺服器回應:', data);
+                output.textContent = `目前速度：${data}`;
             })
             .catch(error => {
                 console.error('錯誤:', error);
