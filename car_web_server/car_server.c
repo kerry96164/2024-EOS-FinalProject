@@ -329,6 +329,7 @@ void update_speed_from_socket(){
             }else{
                 shm_ptr->left += left;
             }
+            left = shm_ptr->left;
             V(sem_id, 0);
         }
         if(right != 0){
@@ -340,12 +341,18 @@ void update_speed_from_socket(){
             }else{
                 shm_ptr->right += right;
             }
+            right = shm_ptr->right;
             V(sem_id, 1);
         }
-        char response[] = "HTTP/1.1 200 OK\r\n"
+        char header[] = "HTTP/1.1 200 OK\r\n"
                         "Access-Control-Allow-Origin: http://192.168.1.2:5000\r\n"
-                        "Content-Type: text/plain\r\n\r\n"
-                        "Message received successfully";
+                        "Content-Type: text/plain\r\n\r\n";
+
+        char response[strlen(header) + 50];
+
+        sprintf(response, "%sLeft:%d  Right:%d", header, left, right);
+        response[strlen(response)] = '\0';
+
         ssize_t sent_bytes = write(reply_sockfd, response, strlen(response));
         if (sent_bytes < 0) {
             perror("send");
