@@ -16,7 +16,7 @@ display = tm1637.TM1637(clk=CLK, dio=DIO)
 display.brightness(7)
 file_path = "game_score.txt"
 RUN = True
-
+dot = True
 
 # 初始化記錄圓數的緩衝區，長度為 10
 # circle_count_buffer = deque(maxlen=5)
@@ -62,7 +62,9 @@ def detect_ball(cam):
     with open(file_path, "w") as file:
         file.write(str(avg_circle_count))
     #print(avg_circle_count)
-    display.show(f"   {avg_circle_count}"[-4:])
+    global dot
+    display.show(f"   {avg_circle_count}"[-4:], colon=dot) # 顯示在四位數七段顯示器上，不足四位補空格，並顯示冒號，冒號會閃爍
+    dot = not dot
 
 def handler(signum, frame):
     #signame = signal.Signals(signum).name
