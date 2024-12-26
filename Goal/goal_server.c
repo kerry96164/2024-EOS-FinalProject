@@ -603,8 +603,7 @@ int main(int argc, char* argv[]) {
     // setup brightness (0x00 to 0x07)
     TM1637_setBrightness(0x07);
     printf("GAME START!!!\n");
-    TM1637_displayTime(300);
-    TM1637_displayTime(300);
+    TM1637_displayTime(0);
     //parent_func();
 
     
