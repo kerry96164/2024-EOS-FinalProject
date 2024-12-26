@@ -2,6 +2,7 @@ import cv2
 from flask import Flask, render_template, Response
 from io import BytesIO
 from PIL import Image
+import subprocess
 
 
 app = Flask(
@@ -55,6 +56,17 @@ def get_stream_html():
 def video_stream():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route("/shutdown", methods=['GET'])
+def shutdown():
+    cap.release()
+    subprocess.run(['sudo', 'shutdown', '-h'], check=True)
+    return "shutdown"
+
+@app.route("/reboot", methods=['GET'])
+def reboot():
+    cap.release()
+    subprocess.run(['sudo', 'reboot'], check=True)
+    return "reboot"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0')

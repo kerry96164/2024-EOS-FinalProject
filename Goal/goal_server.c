@@ -42,7 +42,7 @@ To-do list
 # define SHM_KEY 11223344
 # define SHM_KEY2 1122334 // for is_running value
 
-# define GAMETIME 300
+# define GAMETIME 120
 
 
 int shmid = -1;;
@@ -366,13 +366,13 @@ void print_list(List_t* list, int client_fd) {
     int num = 0;
 
     // add title
-    snprintf(send_buf + index, BUFFERSIZE - index, "==========Ranking Board==========\n");
+    snprintf(send_buf, BUFFERSIZE, "==========Ranking Board==========\n");
     index = strlen(send_buf);
 
     // sprintf into send_buf
     while (num < CAPACITY && current != -1) {
         int n = snprintf(send_buf + index, BUFFERSIZE - index, 
-                         "%-13s %-10d %-13s\n", 
+                         "%-13s %-10d %-13s\r\n", 
                          list->nodes[current].name, 
                          list->nodes[current].score, 
                          list->nodes[current].time);
@@ -390,8 +390,14 @@ void print_list(List_t* list, int client_fd) {
         num++;
         current = list->nodes[current].offset;
     }
-
-    if (send(client_fd, send_buf, index, 0) == -1) {
+    char header[] = "HTTP/1.1 200 OK\r\n"
+                "Access-Control-Allow-Origin: http://192.168.1.2:5000\r\n"
+                "Content-Type: text/plain\r\n\r\n";
+    char response[strlen(header) + strlen(send_buf) + 1];
+    sprintf(response, "%s%s", header, send_buf);
+    response[strlen(response)] = '\0';
+    printf("%s\n", response);
+    if (send(client_fd, response, strlen(response), 0) == -1) {
         perror("Failed to send ranking board");
     }
 }
@@ -402,21 +408,44 @@ void child_func(int client_fd){
     char choice_from_client[10] = {0};
     char send_buf[BUFFERSIZE] = {0};
     int score;
+    int content_length = 0;
+    char body[32];
     int s = semget(SEM_KEY, 1, 0);
     if (s < 0) {
         printf("cannot find semaphore\n");
     }
+    char response[] = "HTTP/1.1 200 OK\r\n"
+                    "Access-Control-Allow-Origin: http://192.168.1.2:5000\r\n"
+                    "Content-Type: text/plain\r\n\r\n"
+                    "Message received successfully";
     while(1){
+        
         memset(recv_buf, 0 , BUFFERSIZE);
-        if (recv(client_fd, recv_buf, BUFFERSIZE, 0) > 0) {
+        int read_ret = recv(client_fd, recv_buf, BUFFERSIZE, 0);
+        if (read_ret > 0) {
+                    
+            recv_buf[read_ret] = '\0';
+            
+            // Find Content-Length
+            char *content_length_header = strstr(recv_buf, "Content-Length: ");
+            if (content_length_header) {
+                sscanf(content_length_header, "Content-Length: %d", &content_length);
+            }
+            // Find body
+            if (content_length > 0) {
+                const char *start = &recv_buf[0] + read_ret - content_length;
+                strncpy(body, start, content_length+1);
+                body[content_length] = '\0';
+            } 
+            printf("Received: %s\n", body);
+
             strncpy(name, "Unknown", NAME_SIZE);
-            //char format_string[50];
-            //snprintf(format_string, sizeof(format_string), "%%s %%[1-9a-zA-Z]s");
-            //printf("%s\n",format_string);
-            sscanf(recv_buf, "%s %[0-9a-zA-Z]s", choice_from_client, name);
+            sscanf(body, "%s %[0-9a-zA-Z]s", choice_from_client, name);
             name[NAME_SIZE] = '\0';
             if (strncmp(choice_from_client, "first", 5) == 0){
                 printf("[#%d] Login & Start Player:%s\n", client_ind, name);
+                //send(client_fd, response, strlen(response), 0); // send response
+                write(client_fd, response, strlen(response));
                 if (*is_running == 0){
                     (*is_running)=1;
                         int val = 0;
@@ -435,10 +464,12 @@ void child_func(int client_fd){
                 fclose(file);
                 add(list, name, game_score);
                 V(s);
+                print_list(list, client_fd);
+                exit(0);
             }else if(strncmp(choice_from_client, "second", 7)== 0){
-
                 printf("[#%d] Ranking Board\n",client_ind);
                 print_list(list, client_fd);
+                exit(0);
             }else if(strncmp(choice_from_client, "exit", 4)== 0){
                 printf("[#%d] Exit\n",client_ind);
                 // detach shared memory
