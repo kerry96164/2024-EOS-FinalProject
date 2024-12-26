@@ -29,11 +29,13 @@ static struct pwm_device *pwm_right = NULL;  // PWM 設備（右）
 static int __init etx_driver_init(void); 
 static void __exit etx_driver_exit(void);
 
-void set_gpios(int rb,int rf, int lb, int lf){
-    gpio_set_value(RIGHT_BACKWARD_PIN, rb);
-    gpio_set_value(RIGHT_FORWARD_PIN, rf);
+void set_left_gpio(int lb, int lf){
     gpio_set_value(LEFT_BACKWARD_PIN, lb);
     gpio_set_value(LEFT_FORWARD_PIN, lf);
+}
+void set_right_gpio(int rb, int rf){
+    gpio_set_value(RIGHT_BACKWARD_PIN, rb);
+    gpio_set_value(RIGHT_FORWARD_PIN, rf);
 }
 
 void set_pwm_duty_cycle(struct pwm_device *pwm, int duty_cycle){
@@ -121,8 +123,12 @@ static ssize_t etx_read(struct file *filp,
 static ssize_t etx_write(struct file *filp,  
                 const char __user *buf, size_t len, loff_t *off) 
 { 
+    if (pwm_left == NULL || pwm_right == NULL) {
+        pwm_left = pwm_request(PWM_LEFT_CHANNEL, "pwm_left");
+        pwm_right = pwm_request(PWM_RIGHT_CHANNEL, "pwm_right");
+    }
     char rec_buf[20] = {0};
-    char command;
+    char command[5] = {0};      // 指令
     int duty_cycle_left = 100;  // 預設左馬達速度（百分比）
     int duty_cycle_right = 100; // 預設右馬達速度（百分比）
     
@@ -136,25 +142,29 @@ static ssize_t etx_write(struct file *filp,
     rec_buf[len] = '\0';
     
     // 解析指令格式，例如 "w 80 60"
-    sscanf(rec_buf, "%c %d %d", &command, &duty_cycle_left, &duty_cycle_right);
-
-    pr_info("Write Function : %c %d %d\n", command, duty_cycle_left, duty_cycle_right);
+    sscanf(rec_buf, "%s %d %d", command, &duty_cycle_left, &duty_cycle_right);
+    pr_info("Write Function : %s %d %d\n", command, duty_cycle_left, duty_cycle_right);
     
-    if (command == 'W' || command == 'w') { 
-        set_gpios(0, 1, 0, 1); 
-    } else if (command == 'S' || command == 's') { 
-        set_gpios(1, 0, 1, 0); 
-    } else if (command == 'A' || command == 'a') { 
-        set_gpios(0, 1, 0, 0); 
-    } else if (command == 'D' || command == 'd') { 
-        set_gpios(0, 0, 0, 1); 
-    } else if (command == 'X' || command == 'x') { 
-        set_gpios(0, 0, 0, 0); 
+    if (strcmp(command, "rf") == 0) { // 右前進
+        set_right_gpio(0, 1);
+    } else if (strcmp(command, "rb") == 0) { // 右後退
+        set_right_gpio(1, 0);
+    } else if (strcmp(command, "lf") == 0) { // 左前進
+        set_left_gpio(0, 1);
+    } else if (strcmp(command, "lb") == 0) { // 左後退
+        set_left_gpio(1, 0);
+    } else if (strcmp(command, "stop") == 0) { // 停止
+        set_left_gpio(0, 0);
+        set_right_gpio(0, 0);
+    } else if (strcmp(command, "pwm") == 0) { // 設置 PWM
+        set_pwm_duty_cycle(pwm_left, duty_cycle_left);
+        set_pwm_duty_cycle(pwm_right, duty_cycle_right);
+    } else {
+        return -EINVAL;
     }
 
     // 設置左右馬達速度
-    set_pwm_duty_cycle(pwm_left, duty_cycle_left);
-    set_pwm_duty_cycle(pwm_right, duty_cycle_right);
+
     
     return len; 
 } 
@@ -265,23 +275,31 @@ static int __init etx_driver_init(void)
 */  
 static void __exit etx_driver_exit(void) 
 { 
-  for(int i = 0; i< COUNT ; i++){
-    gpio_unexport(gpios[i]); 
-    gpio_free(gpios[i]); 
-  }
-  pwm_free(pwm_left);
-  pwm_free(pwm_right);
-  device_destroy(dev_class,dev); 
-  class_destroy(dev_class); 
-  cdev_del(&etx_cdev); 
-  unregister_chrdev_region(dev, 1); 
-  pr_info("Device Driver Remove...Done!!\n"); 
+    for(int i = 0; i< COUNT ; i++){
+        gpio_unexport(gpios[i]); 
+        gpio_free(gpios[i]); 
+    }
+    if (pwm_left != NULL) {  
+        pwm_disable(pwm_left);
+        pwm_free(pwm_left); 
+        pwm_left = NULL;
+    }
+    if (pwm_right != NULL) {  
+        pwm_disable(pwm_right);
+        pwm_free(pwm_right);
+        pwm_right = NULL; 
+    }
+    device_destroy(dev_class,dev); 
+    class_destroy(dev_class); 
+    cdev_del(&etx_cdev); 
+    unregister_chrdev_region(dev, 1); 
+    pr_info("Device Driver Remove...Done!!\n"); 
 } 
   
 module_init(etx_driver_init); 
 module_exit(etx_driver_exit); 
   
 MODULE_LICENSE("GPL"); 
-MODULE_AUTHOR("ChengHanWang <yhes3103@gmail.com>"); 
+MODULE_AUTHOR("YuKai Lu <yukai.ee12@nycu.edu.tw>");
 MODULE_DESCRIPTION("PWM Motor Driver"); 
 MODULE_VERSION("2.0"); 
