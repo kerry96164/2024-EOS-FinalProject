@@ -18,7 +18,7 @@ NYCU EECN30062
 
 ## Structure
 ### Car `car_web_server/car_server.c`
-[Demo](/ppt/car.mp4)  
+[Demo](https://youtu.be/TJ8jm6rcYDU)  
 * Multiple players can control simultaneously.
 * Use Semaphore to prevent race conditions.
 * The motor driver uses PWM to achieve different speeds.
@@ -26,14 +26,14 @@ NYCU EECN30062
 * Use sockets to obtain scores from the goal.
 * Display movement direction using an LED matrix.
 ### Goal: `Goal/goal_server.c`  
-[Demo](/ppt/goal_detect_ball.mp4)  
+[Demo](https://youtu.be/c0X0LgzIEgA)  
 * Execute `detect_ball.py` to count the number of balls in the goal.
 * Controls game flow and tracks scores.
 * Forks child processes to handle car connections.
 #### Ball Detect: `Goal/detect_ball.py`
-[Demo](/ppt/detect_ball.mp4)
+[Demo](https://youtu.be/OWKXxmOcbDw)
 * Using color filter and Hough Circle Transform  
 ## Full Demo
-[Demo Video](/ppt/Demo.mp4)
+[Demo Video](https://youtu.be/pdQKvCO1ucs)
 
 > For more details, please see [Report](/ppt/EOS_Final.pdf)
