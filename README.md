@@ -1,4 +1,4 @@
-# 2024-EOS-Lab
+# 2024-EOS-FinalProject
 1131 Embedded Operating Systems 嵌入式作業系統 Final Project  
 NYCU EECN30062
 
